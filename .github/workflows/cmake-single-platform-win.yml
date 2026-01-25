@@ -27,8 +27,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller PyQt5
-          pip install -r requirements.txt || true
+          pip install pyinstaller PyQt5 --add-data "global-network.ico;."
 
       - name: Build executable with PyInstaller
         run: |

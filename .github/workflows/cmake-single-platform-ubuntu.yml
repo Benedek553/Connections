@@ -26,7 +26,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          apt install libxcb
+          sudo apt install libxcb
           python -m pip install --upgrade pip
           pip install pyinstaller PyQt5
 

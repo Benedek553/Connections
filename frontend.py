@@ -5,6 +5,10 @@ import backend as db_ops
 from PyQt5.QtGui import QIcon
 
 
+def resource_path(rel_path):
+    if hasattr(sys, "_MEIPASS"):
+        return os.path.join(sys._MEIPASS, rel_path)
+    return os.path.join(os.path.abspath("."), rel_path)
 
 
 
@@ -15,7 +19,7 @@ class MainWindow(QMainWindow):
         self.setGeometry(100, 100, 800, 600)
         self.conn = db_ops.connect_to_database()
         db_ops.create_tables_metadata_table(self.conn)
-        self.setWindowIcon(QIcon('global-network.ico'))  # Set the window icon
+        self.setWindowIcon(QIcon(resource_path('global-network.ico')))  # Set the window icon
 
         self.initUI()
 

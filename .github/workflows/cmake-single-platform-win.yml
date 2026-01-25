@@ -27,12 +27,12 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller
+          pip install pyinstaller PyQt5
           pip install -r requirements.txt || true
 
       - name: Build executable with PyInstaller
         run: |
-          pyinstaller --onefile --noconsole --icon=global-network.ico frontend.py
+          pyinstaller --onefile --noconsole --icon=global-network.ico frontend.py --name Connections
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

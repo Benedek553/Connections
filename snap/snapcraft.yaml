@@ -1,0 +1,72 @@
+name: connections-app
+version: '1.0.0'
+summary: A connection management application
+description: |
+  Connections is a PyQt5-based application for managing and organizing contact information
+  across multiple tables. Features include creating tables, adding/editing entries, combining
+  tables, and searching across multiple tables.
+
+grade: stable
+confinement: classic
+base: core22
+
+apps:
+  connections:
+    command: bin/connections-wrapper
+    environment:
+      PYTHONPATH: $SNAP/usr/lib/python3/dist-packages:$PYTHONPATH
+      LD_LIBRARY_PATH: $SNAP/usr/lib:$SNAP/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
+      QT_QPA_PLATFORM_PLUGIN_PATH: $SNAP/usr/lib/x86_64-linux-gnu/qt5/plugins
+      QT_PLUGIN_PATH: $SNAP/usr/lib/x86_64-linux-gnu/qt5/plugins
+      XDG_DATA_DIRS: $SNAP/usr/share
+
+parts:
+  connections:
+    plugin: dump
+    source: .
+    stage-packages:
+      - python3
+      - python3-pyqt5
+      - python3-pyqt5.qtwebengine
+      - qt5-qmake
+      - qtbase5-dev
+      - libqt5gui5
+      - libqt5core5a
+      - libqt5widgets5
+      - libqt5dbus5
+      - libqt5network5
+      - libqt5svg5
+      - libxcb1
+      - libxcb-xinerama0
+      - libxcb-cursor0
+      - libxkbcommon-x11-0
+      - libx11-xcb1
+      - libxcb-render0
+      - libxcb-shape0
+      - libxcb-randr0
+      - libxcb-icccm4
+      - libxcb-keysyms1
+      - libgl1-mesa-glx
+      - libxkbcommon0
+      - libfontconfig1
+      - libfreetype6
+      - libharfbuzz0b
+      - libpng16-16
+      - libjpeg-turbo8
+      - libx11-6
+      - libxext6
+      - libxrender1
+    override-build: |
+      mkdir -p $CRAFT_PART_INSTALL/bin
+      cp frontend.py $CRAFT_PART_INSTALL/bin/
+      cp backend.py $CRAFT_PART_INSTALL/bin/
+      cp global-network.ico $CRAFT_PART_INSTALL/bin/
+      cat > $CRAFT_PART_INSTALL/bin/connections-wrapper << 'EOF'
+      #!/bin/bash
+      export QT_QPA_PLATFORM_PLUGIN_PATH=$SNAP/usr/lib/x86_64-linux-gnu/qt5/plugins
+      export QT_PLUGIN_PATH=$SNAP/usr/lib/x86_64-linux-gnu/qt5/plugins
+      mkdir -p ~/.local/share/connections-app
+      cd ~/.local/share/connections-app
+      exec python3 $SNAP/bin/frontend.py
+      EOF
+      chmod +x $CRAFT_PART_INSTALL/bin/connections-wrapper

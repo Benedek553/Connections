@@ -15,7 +15,7 @@ class MainWindow(QMainWindow):
         self.setGeometry(100, 100, 800, 600)
         self.conn = db_ops.connect_to_database()
         db_ops.create_tables_metadata_table(self.conn)
-        self.setWindowIcon(QIcon('_internal/global_network.ico'))  # Set the window icon
+        self.setWindowIcon(QIcon('global_network.ico'))  # Set the window icon
 
         self.initUI()
 

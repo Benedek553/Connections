@@ -13,7 +13,7 @@ env:
 
 jobs:
   build:
-    runs-on: mac-latest
+    runs-on: macos-latest
 
     steps:
       - name: Checkout repository
@@ -31,7 +31,7 @@ jobs:
 
       - name: Build executable with PyInstaller
         run: |
-          pyinstaller --onefile --noconsole --icon=global-network.ico frontend.py --name Connections --add-data "global-network.ico;."
+          pyinstaller --onefile --noconsole --icon=global-network.ico frontend.py --name Connections --add-data="global-network.ico;."
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

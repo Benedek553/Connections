@@ -2,9 +2,11 @@ name: CMake pipeline for Windows build
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "master" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "master" ]
+  workflow_dispatch:
+
 
 env:
   BUILD_TYPE: Release

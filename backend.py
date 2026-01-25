@@ -3,7 +3,8 @@ import os
 from datetime import datetime
 
 # Define the database file path
-db_file_path = os.path.join(os.path.dirname(__file__), 'table.db')
+#db_file_path = os.path.join(os.path.dirname(__file__), 'table.db')
+db_file_path = os.path.join(os.path.expanduser('~'), '.local', 'share', 'connections-app', 'table.db')
 
 # Connect to the SQLite database file
 def connect_to_database():

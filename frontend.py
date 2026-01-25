@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import QComboBox, QHBoxLayout,QHeaderView,QSizePolicy, QApp
 from PyQt5.QtCore import Qt
 import backend as db_ops
 from PyQt5.QtGui import QIcon
-
+import os
 
 def resource_path(rel_path):
     if hasattr(sys, "_MEIPASS"):

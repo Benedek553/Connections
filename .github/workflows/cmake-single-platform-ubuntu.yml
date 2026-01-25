@@ -34,7 +34,10 @@ jobs:
             libx11-xcb1 \
             libxcb-render0 \
             libxcb-shape0 \
-            libxcb-randr0
+            libxcb-randr0 \
+            libxcb-icccm4 \
+            libxcb-keysyms1
+
 
           python -m pip install --upgrade pip
           pip install pyinstaller PyQt5

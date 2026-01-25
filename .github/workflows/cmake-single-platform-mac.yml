@@ -26,7 +26,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          brew install libxcb pillow
+          brew install libxcb
+          brew install pillow
           python -m pip install --upgrade pip
           pip install pyinstaller PyQt5
 

@@ -18,6 +18,7 @@
 - Pick the column that should fill each field.
 - Name uses two optional columns (First/Primary and Last/Secondary).
   Choose one or both; the values will be combined.
+- Photo accepts a URL; remote URLs will be downloaded and stored locally.
 - You must select at least one Name column to continue.
 - Unused fields can be left empty.
 

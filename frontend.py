@@ -3,13 +3,57 @@ import csv
 from PyQt5.QtWidgets import QComboBox, QHBoxLayout,QHeaderView,QSizePolicy, QApplication, QMainWindow, QWidget, QVBoxLayout, QPushButton,QGridLayout, QLineEdit, QLabel, QTableWidget, QTableWidgetItem, QCheckBox, QFormLayout, QMessageBox, QInputDialog,QScrollArea, QDialog, QFileDialog
 from PyQt5.QtCore import Qt
 import backend as db_ops
-from PyQt5.QtGui import QIcon
+from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor
 import os
+
+PHOTO_SIZE = 64
+PLACEHOLDER_BG = QColor(230, 230, 230)
+PLACEHOLDER_FG = QColor(190, 190, 190)
+_PLACEHOLDER_CACHE = {}
+
 
 def resource_path(rel_path):
     if hasattr(sys, "_MEIPASS"):
         return os.path.join(sys._MEIPASS, rel_path)
     return os.path.join(os.path.abspath("."), rel_path)
+
+
+def placeholder_pixmap(size=PHOTO_SIZE):
+    cached = _PLACEHOLDER_CACHE.get(size)
+    if cached:
+        return cached
+    pixmap = QPixmap(size, size)
+    pixmap.fill(PLACEHOLDER_BG)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing, True)
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(PLACEHOLDER_FG)
+    head_size = int(size * 0.35)
+    head_x = (size - head_size) // 2
+    head_y = int(size * 0.18)
+    painter.drawEllipse(head_x, head_y, head_size, head_size)
+    body_width = int(size * 0.6)
+    body_height = int(size * 0.32)
+    body_x = (size - body_width) // 2
+    body_y = int(size * 0.52)
+    painter.drawRoundedRect(body_x, body_y, body_width, body_height, body_height / 2, body_height / 2)
+    painter.end()
+    _PLACEHOLDER_CACHE[size] = pixmap
+    return pixmap
+
+
+def build_photo_label(photo_path, size=PHOTO_SIZE):
+    label = QLabel()
+    label.setFixedSize(size, size)
+    label.setAlignment(Qt.AlignCenter)
+    if photo_path and os.path.isfile(photo_path):
+        pixmap = QPixmap(photo_path)
+        if not pixmap.isNull():
+            pixmap = pixmap.scaled(size, size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+            label.setPixmap(pixmap)
+            return label
+    label.setPixmap(placeholder_pixmap(size))
+    return label
 
 
 
@@ -169,12 +213,14 @@ class TableDialog(QDialog):
         layout.addWidget(self.entry_count_label)
 
         self.entries_table = QTableWidget()
-        self.entries_table.setColumnCount(12)
-        self.entries_table.setHorizontalHeaderLabels(["Name", "Phone", "Email", "WhatsApp", "Signal", "Telegram", "Facebook", "LinkedIn", "Relationship", "Notes", "Edit", "Delete"])
+        self.entries_table.setColumnCount(13)
+        self.entries_table.setHorizontalHeaderLabels(["Photo", "Name", "Phone", "Email", "WhatsApp", "Signal", "Telegram", "Facebook", "LinkedIn", "Relationship", "Notes", "Edit", "Delete"])
         self.entries_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         for i in range(self.entries_table.columnCount()):
             self.entries_table.horizontalHeader().setSectionResizeMode(i, QHeaderView.Stretch)
+        self.entries_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
+        self.entries_table.setColumnWidth(0, PHOTO_SIZE)
 
         self.entries_table.setWordWrap(True)
         self.entries_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
@@ -202,18 +248,32 @@ class TableDialog(QDialog):
         for entry in entries:
             row_position = self.entries_table.rowCount()
             self.entries_table.insertRow(row_position)
-            for i, value in enumerate(entry[1:-1]):
+            self.entries_table.setRowHeight(row_position, PHOTO_SIZE)
+            self.entries_table.setCellWidget(row_position, 0, build_photo_label(entry[9]))
+            values = [
+                entry[1],
+                entry[2],
+                entry[3],
+                entry[4],
+                entry[5],
+                entry[6],
+                entry[7],
+                entry[8],
+                entry[10],
+                entry[11],
+            ]
+            for i, value in enumerate(values, start=1):
                 item = QTableWidgetItem(str(value))
                 item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                 self.entries_table.setItem(row_position, i, item)
 
             edit_button = QPushButton("Edit")
             edit_button.clicked.connect(lambda _, e=entry: self.edit_entry(e))
-            self.entries_table.setCellWidget(row_position, 10, edit_button)
+            self.entries_table.setCellWidget(row_position, 11, edit_button)
 
             delete_button = QPushButton("Delete")
             delete_button.clicked.connect(lambda _, e=entry: self.delete_entry(e))
-            self.entries_table.setCellWidget(row_position, 11, delete_button)
+            self.entries_table.setCellWidget(row_position, 12, delete_button)
 
     def delete_entry(self, entry):
         reply = QMessageBox.question(
@@ -310,6 +370,7 @@ class ImportMappingDialog(QDialog):
             ("telegram_handle", "Telegram"),
             ("facebook", "Facebook"),
             ("linkedin", "LinkedIn"),
+            ("photo", "Photo"),
             ("relationship", "Relationship"),
             ("other_notes", "Notes"),
         ]
@@ -326,6 +387,7 @@ class ImportMappingDialog(QDialog):
             "telegram_handle": ["Telegram"],
             "facebook": ["Facebook"],
             "linkedin": ["LinkedIn"],
+            "photo": ["Photo", "Photo URL", "Photo 1 - Value"],
         }
 
         header_lc = {header.lower(): header for header in self.headers}
@@ -393,6 +455,7 @@ class EntryDialog(QDialog):
         self.telegram_input = QLineEdit()
         self.facebook_input = QLineEdit()  # New input
         self.linkedin_input = QLineEdit()  # New input
+        self.photo_input = QLineEdit()
         self.relationship_input = QLineEdit()
         self.notes_input = QLineEdit()
 
@@ -404,6 +467,7 @@ class EntryDialog(QDialog):
         self.layout().addRow("Telegram:", self.telegram_input)
         self.layout().addRow("Facebook:", self.facebook_input)  # New row
         self.layout().addRow("LinkedIn:", self.linkedin_input)  # New row
+        self.layout().addRow("Photo (URL or Path):", self.photo_input)
         self.layout().addRow("Relationship:", self.relationship_input)
         self.layout().addRow("Notes:", self.notes_input)
 
@@ -416,8 +480,9 @@ class EntryDialog(QDialog):
             self.telegram_input.setText(self.entry[6])
             self.facebook_input.setText(self.entry[7])  # New field
             self.linkedin_input.setText(self.entry[8])  # New field
-            self.relationship_input.setText(self.entry[9])
-            self.notes_input.setText(self.entry[10])
+            self.photo_input.setText(self.entry[9])
+            self.relationship_input.setText(self.entry[10])
+            self.notes_input.setText(self.entry[11])
 
         self.save_button = QPushButton("Save")
         self.save_button.clicked.connect(self.save_entry)
@@ -433,6 +498,7 @@ class EntryDialog(QDialog):
             self.telegram_input.text(),
             self.facebook_input.text(),  # New field
             self.linkedin_input.text(),  # New field
+            self.photo_input.text(),
             self.relationship_input.text(),
             self.notes_input.text()
         )
@@ -483,13 +549,15 @@ class CombineTablesDialog(QDialog):
         self.layout.addWidget(self.combine_button)
 
         self.results_table = QTableWidget()
-        self.results_table.setColumnCount(12)  # Adjusted for new columns
-        self.results_table.setHorizontalHeaderLabels(["Name", "Phone", "Email", "WhatsApp", "Signal", "Telegram", "Facebook", "LinkedIn", "Relationship", "Notes", "Last Modified", "Source Table"])
+        self.results_table.setColumnCount(13)  # Adjusted for new columns
+        self.results_table.setHorizontalHeaderLabels(["Photo", "Name", "Phone", "Email", "WhatsApp", "Signal", "Telegram", "Facebook", "LinkedIn", "Relationship", "Notes", "Last Modified", "Source Table"])
         self.results_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         # Set resize mode for each column to stretch
         for i in range(self.results_table.columnCount()):
             self.results_table.horizontalHeader().setSectionResizeMode(i, QHeaderView.Stretch)
+        self.results_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
+        self.results_table.setColumnWidth(0, PHOTO_SIZE)
 
         self.results_table.setWordWrap(True)
         self.results_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
@@ -539,16 +607,27 @@ class CombineTablesDialog(QDialog):
         for entry in combined_data:
             row_position = self.results_table.rowCount()
             self.results_table.insertRow(row_position)
+            self.results_table.setRowHeight(row_position, PHOTO_SIZE)
 
-            # Skip the ID (index 0) and created_at (index 11) columns
-            for i, value in enumerate(entry[1:], start=0):  # Start from index 1 to skip ID
-                if i == 10:  # Skip the created_at column (index 11 in the original entry)
-                    continue
-                # Adjust the index for display since we're skipping one column
-                display_index = i if i < 10 else i - 1
+            self.results_table.setCellWidget(row_position, 0, build_photo_label(entry[9]))
+            values = [
+                entry[1],
+                entry[2],
+                entry[3],
+                entry[4],
+                entry[5],
+                entry[6],
+                entry[7],
+                entry[8],
+                entry[10],
+                entry[11],
+                entry[13],
+                entry[14],
+            ]
+            for i, value in enumerate(values, start=1):
                 item = QTableWidgetItem(str(value))
                 item.setFlags(item.flags() & ~Qt.ItemIsEditable)  # Make item non-editable
-                self.results_table.setItem(row_position, display_index, item)
+                self.results_table.setItem(row_position, i, item)
 
 class SearchTablesDialog(QDialog):
     def __init__(self, conn, parent=None):
@@ -599,13 +678,15 @@ class SearchTablesDialog(QDialog):
         self.layout.addWidget(self.search_button)
 
         self.results_table = QTableWidget()
-        self.results_table.setColumnCount(12)  # Adjusted for new columns
-        self.results_table.setHorizontalHeaderLabels(["Name", "Phone", "Email", "WhatsApp", "Signal", "Telegram", "Facebook", "LinkedIn", "Relationship", "Notes", "Last Modified", "Source Table"])
+        self.results_table.setColumnCount(13)  # Adjusted for new columns
+        self.results_table.setHorizontalHeaderLabels(["Photo", "Name", "Phone", "Email", "WhatsApp", "Signal", "Telegram", "Facebook", "LinkedIn", "Relationship", "Notes", "Last Modified", "Source Table"])
         self.results_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         # Set resize mode for each column to stretch
         for i in range(self.results_table.columnCount()):
             self.results_table.horizontalHeader().setSectionResizeMode(i, QHeaderView.Stretch)
+        self.results_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
+        self.results_table.setColumnWidth(0, PHOTO_SIZE)
 
         self.results_table.setWordWrap(True)
         self.results_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
@@ -659,16 +740,27 @@ class SearchTablesDialog(QDialog):
         for entry in search_results:
             row_position = self.results_table.rowCount()
             self.results_table.insertRow(row_position)
+            self.results_table.setRowHeight(row_position, PHOTO_SIZE)
 
-            # Skip the ID (index 0) and created_at (index 11) columns
-            for i, value in enumerate(entry[1:], start=0):  # Start from index 1 to skip ID
-                if i == 10:  # Skip the created_at column (index 11 in the original entry)
-                    continue
-                # Adjust the index for display since we're skipping one column
-                display_index = i if i < 10 else i - 1
+            self.results_table.setCellWidget(row_position, 0, build_photo_label(entry[9]))
+            values = [
+                entry[1],
+                entry[2],
+                entry[3],
+                entry[4],
+                entry[5],
+                entry[6],
+                entry[7],
+                entry[8],
+                entry[10],
+                entry[11],
+                entry[13],
+                entry[14],
+            ]
+            for i, value in enumerate(values, start=1):
                 item = QTableWidgetItem(str(value))
                 item.setFlags(item.flags() & ~Qt.ItemIsEditable)  # Make item non-editable
-                self.results_table.setItem(row_position, display_index, item)
+                self.results_table.setItem(row_position, i, item)
 
 
 if __name__ == '__main__':

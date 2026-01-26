@@ -1,15 +1,24 @@
+from pathlib import Path
+import csv
 import sqlite3
+import sys
 import os
-from datetime import datetime
+
+if sys.platform == "win32":
+    base = Path.home() / "AppData" / "Local"
+else:
+    base = Path.home() / ".local" / "share"
+
+app_dir = base / "connections-app"
+app_dir.mkdir(parents=True, exist_ok=True)
 
 # Define the database file path
 #db_file_path = os.path.join(os.path.dirname(__file__), 'table.db')
-db_file_path = os.path.join(os.path.expanduser('~'), '.local', 'share', 'connections-app', 'table.db')
 
 # Connect to the SQLite database file
 def connect_to_database():
     try:
-        conn = sqlite3.connect(db_file_path)
+        conn = sqlite3.connect(app_dir / "table.db")
         print('Connected to the SQLite database.')
         return conn
     except sqlite3.Error as e:
@@ -106,6 +115,85 @@ def add_entry(conn, table_name, entry_data):
     if not is_valid_table_name(table_name):
         print('Invalid table name.')
         return False
+
+
+def parse_google_contacts_csv(file_path, mapping):
+    entries = []
+    skipped = 0
+
+    with open(file_path, newline="", encoding="utf-8-sig") as csv_file:
+        reader = csv.DictReader(csv_file)
+        for row in reader:
+            name_column = mapping.get("name", "")
+            name_column_2 = mapping.get("name_2", "")
+            phone_column = mapping.get("phone_contact", "")
+            email_column = mapping.get("email", "")
+            whatsapp_column = mapping.get("whatsapp_phone", "")
+            signal_column = mapping.get("signal_phone", "")
+            telegram_column = mapping.get("telegram_handle", "")
+            facebook_column = mapping.get("facebook", "")
+            linkedin_column = mapping.get("linkedin", "")
+            relationship_column = mapping.get("relationship", "")
+            notes_column = mapping.get("other_notes", "")
+
+            name_primary = row.get(name_column, "").strip() if name_column else ""
+            name_secondary = row.get(name_column_2, "").strip() if name_column_2 else ""
+            name = " ".join(part for part in [name_primary, name_secondary] if part)
+            phone = row.get(phone_column, "").strip() if phone_column else ""
+            email = row.get(email_column, "").strip() if email_column else ""
+            whatsapp = row.get(whatsapp_column, "").strip() if whatsapp_column else ""
+            signal = row.get(signal_column, "").strip() if signal_column else ""
+            telegram = row.get(telegram_column, "").strip() if telegram_column else ""
+            facebook = row.get(facebook_column, "").strip() if facebook_column else ""
+            linkedin = row.get(linkedin_column, "").strip() if linkedin_column else ""
+            relationship = row.get(relationship_column, "").strip() if relationship_column else ""
+            notes = row.get(notes_column, "").strip() if notes_column else ""
+
+            if not name:
+                skipped += 1
+                continue
+
+            entry_data = (
+                name,
+                phone,
+                email,
+                whatsapp,
+                signal,
+                telegram,
+                facebook,
+                linkedin,
+                relationship,
+                notes,
+            )
+            entries.append(entry_data)
+
+    return entries, skipped
+
+
+def import_google_contacts(conn, table_name, file_path, mapping):
+    if not is_valid_table_name(table_name):
+        return None, None, "Invalid table name."
+
+    try:
+        entries, skipped = parse_google_contacts_csv(file_path, mapping)
+    except OSError as e:
+        return None, None, f"Could not read CSV: {e}"
+    except csv.Error as e:
+        return None, None, f"Invalid CSV format: {e}"
+
+    if not entries:
+        return 0, skipped, None
+
+    insert_sql = f'''
+    INSERT INTO {table_name} (name, phone_contact, email, whatsapp_phone, signal_phone, telegram_handle, facebook, linkedin, relationship, other_notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    '''
+    try:
+        with conn:
+            conn.executemany(insert_sql, entries)
+        return len(entries), skipped, None
+    except sqlite3.Error as e:
+        return None, None, f"Error importing contacts: {e}"
 
     insert_sql = f'''
     INSERT INTO {table_name} (name, phone_contact, email, whatsapp_phone, signal_phone, telegram_handle, facebook, linkedin, relationship, other_notes)

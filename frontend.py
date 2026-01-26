@@ -1,5 +1,6 @@
 import sys
-from PyQt5.QtWidgets import QComboBox, QHBoxLayout,QHeaderView,QSizePolicy, QApplication, QMainWindow, QWidget, QVBoxLayout, QPushButton,QGridLayout, QLineEdit, QLabel, QTableWidget, QTableWidgetItem, QCheckBox, QFormLayout, QMessageBox, QInputDialog,QScrollArea, QDialog
+import csv
+from PyQt5.QtWidgets import QComboBox, QHBoxLayout,QHeaderView,QSizePolicy, QApplication, QMainWindow, QWidget, QVBoxLayout, QPushButton,QGridLayout, QLineEdit, QLabel, QTableWidget, QTableWidgetItem, QCheckBox, QFormLayout, QMessageBox, QInputDialog,QScrollArea, QDialog, QFileDialog
 from PyQt5.QtCore import Qt
 import backend as db_ops
 from PyQt5.QtGui import QIcon
@@ -185,6 +186,10 @@ class TableDialog(QDialog):
         self.add_entry_button.clicked.connect(self.add_entry)
         layout.addWidget(self.add_entry_button)
 
+        self.import_google_button = QPushButton("Import Google Contacts (CSV)")
+        self.import_google_button.clicked.connect(self.import_google_contacts)
+        layout.addWidget(self.import_google_button)
+
         self.setLayout(layout)
 
     def load_entries(self):
@@ -235,6 +240,134 @@ class TableDialog(QDialog):
         dialog = EntryDialog(self.conn, self.table_name, self, entry)
         dialog.exec_()
         self.load_entries()
+
+    def import_google_contacts(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import Google Contacts",
+            "",
+            "Google Contacts CSV (*.csv);;CSV Files (*.csv);;All Files (*)",
+        )
+        if not file_path:
+            return
+
+        try:
+            with open(file_path, newline="", encoding="utf-8-sig") as csv_file:
+                reader = csv.DictReader(csv_file)
+                headers = reader.fieldnames or []
+        except OSError as e:
+            QMessageBox.warning(self, "Import Error", f"Could not read CSV: {e}")
+            return
+        except csv.Error as e:
+            QMessageBox.warning(self, "Import Error", f"Invalid CSV format: {e}")
+            return
+
+        if not headers:
+            QMessageBox.warning(self, "Import Error", "CSV file has no headers.")
+            return
+
+        dialog = ImportMappingDialog(headers, self)
+        if dialog.exec_() != QDialog.Accepted:
+            return
+
+        mapping = dialog.get_mapping()
+        imported, skipped, error = db_ops.import_google_contacts(self.conn, self.table_name, file_path, mapping)
+        if error:
+            QMessageBox.warning(self, "Import Error", error)
+            return
+
+        if imported is None:
+            QMessageBox.warning(self, "Import Error", "Import failed.")
+            return
+
+        message = f"Imported {imported} contacts."
+        if skipped:
+            message += f" Skipped {skipped} empty rows."
+        QMessageBox.information(self, "Import Complete", message)
+        self.load_entries()
+
+
+class ImportMappingDialog(QDialog):
+    def __init__(self, headers, parent=None):
+        super().__init__(parent)
+        self.headers = headers
+        self.combos = {}
+        self.setWindowTitle("Import Mapping")
+        self.setGeometry(250, 250, 500, 400)
+        self.initUI()
+
+    def initUI(self):
+        layout = QVBoxLayout(self)
+        form_layout = QFormLayout()
+
+        fields = [
+            ("name", "Name (First/Primary)"),
+            ("name_2", "Name (Last/Secondary)"),
+            ("phone_contact", "Phone"),
+            ("email", "Email"),
+            ("whatsapp_phone", "WhatsApp"),
+            ("signal_phone", "Signal"),
+            ("telegram_handle", "Telegram"),
+            ("facebook", "Facebook"),
+            ("linkedin", "LinkedIn"),
+            ("relationship", "Relationship"),
+            ("other_notes", "Notes"),
+        ]
+
+        defaults = {
+            "name": ["Given Name", "First Name", "Name"],
+            "name_2": ["Family Name", "Last Name"],
+            "phone_contact": ["Phone 1 - Value", "Phone"],
+            "email": ["E-mail 1 - Value", "Email", "E-mail"],
+            "relationship": ["Group Membership", "Relationship"],
+            "other_notes": ["Notes"],
+            "whatsapp_phone": ["WhatsApp"],
+            "signal_phone": ["Signal"],
+            "telegram_handle": ["Telegram"],
+            "facebook": ["Facebook"],
+            "linkedin": ["LinkedIn"],
+        }
+
+        header_lc = {header.lower(): header for header in self.headers}
+
+        for key, label in fields:
+            combo = QComboBox()
+            combo.addItem("")
+            combo.addItems(self.headers)
+
+            for preferred in defaults.get(key, []):
+                selected = header_lc.get(preferred.lower())
+                if selected:
+                    combo.setCurrentText(selected)
+                    break
+
+            self.combos[key] = combo
+            form_layout.addRow(f"{label}:", combo)
+
+        layout.addLayout(form_layout)
+
+        buttons_layout = QHBoxLayout()
+        ok_button = QPushButton("Import")
+        ok_button.clicked.connect(self.accept)
+        cancel_button = QPushButton("Cancel")
+        cancel_button.clicked.connect(self.reject)
+        buttons_layout.addWidget(ok_button)
+        buttons_layout.addWidget(cancel_button)
+        layout.addLayout(buttons_layout)
+
+    def get_mapping(self):
+        mapping = {}
+        for key, combo in self.combos.items():
+            mapping[key] = combo.currentText().strip()
+        return mapping
+
+    def accept(self):
+        name_primary = self.combos["name"].currentText().strip()
+        name_secondary = self.combos["name_2"].currentText().strip()
+        if not (name_primary or name_secondary):
+            QMessageBox.warning(self, "Missing Field", "Please select at least one column for Name.")
+            return
+        super().accept()
 
 
 

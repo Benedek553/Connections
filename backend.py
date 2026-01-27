@@ -1,15 +1,30 @@
+from pathlib import Path
+import csv
+import hashlib
+import mimetypes
 import sqlite3
+import sys
 import os
-from datetime import datetime
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
+
+if sys.platform == "win32":
+    base = Path.home() / "AppData" / "Local"
+else:
+    base = Path.home() / ".local" / "share"
+
+app_dir = base / "connections-app"
+app_dir.mkdir(parents=True, exist_ok=True)
+photos_dir = app_dir / "photos"
+photos_dir.mkdir(parents=True, exist_ok=True)
 
 # Define the database file path
 #db_file_path = os.path.join(os.path.dirname(__file__), 'table.db')
-db_file_path = os.path.join(os.path.expanduser('~'), '.local', 'share', 'connections-app', 'table.db')
 
 # Connect to the SQLite database file
 def connect_to_database():
     try:
-        conn = sqlite3.connect(db_file_path)
+        conn = sqlite3.connect(app_dir / "table.db")
         print('Connected to the SQLite database.')
         return conn
     except sqlite3.Error as e:
@@ -75,6 +90,7 @@ def create_table(conn, table_name):
         telegram_handle TEXT,
         facebook TEXT,  -- New column
         linkedin TEXT,  -- New column
+        photo TEXT,
         relationship TEXT,
         other_notes TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -106,10 +122,14 @@ def add_entry(conn, table_name, entry_data):
     if not is_valid_table_name(table_name):
         print('Invalid table name.')
         return False
+    if not ensure_table_schema(conn, table_name):
+        return False
+
+    entry_data = normalize_entry_photo(entry_data)
 
     insert_sql = f'''
-    INSERT INTO {table_name} (name, phone_contact, email, whatsapp_phone, signal_phone, telegram_handle, facebook, linkedin, relationship, other_notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO {table_name} (name, phone_contact, email, whatsapp_phone, signal_phone, telegram_handle, facebook, linkedin, photo, relationship, other_notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     '''
     try:
         with conn:
@@ -121,11 +141,184 @@ def add_entry(conn, table_name, entry_data):
         return False
 
 
+def ensure_table_schema(conn, table_name):
+    if not is_valid_table_name(table_name):
+        print('Invalid table name.')
+        return False
+    try:
+        cursor = conn.execute(f'PRAGMA table_info({table_name})')
+        columns = {row[1] for row in cursor.fetchall()}
+    except sqlite3.Error as e:
+        print(f'Error reading table schema: {e}')
+        return False
+
+    missing = []
+    if "photo" not in columns:
+        missing.append("photo")
+
+    if not missing:
+        return True
+
+    try:
+        with conn:
+            for column in missing:
+                conn.execute(f'ALTER TABLE {table_name} ADD COLUMN {column} TEXT')
+        return True
+    except sqlite3.Error as e:
+        print(f'Error updating table schema: {e}')
+        return False
+
+
+def is_remote_url(value):
+    try:
+        parsed = urlparse(value)
+    except ValueError:
+        return False
+    return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+
+
+def guess_photo_extension(url, content_type):
+    if content_type:
+        extension = mimetypes.guess_extension(content_type.split(";")[0].strip())
+        if extension:
+            return extension
+    _, ext = os.path.splitext(url)
+    if ext:
+        return ext
+    return ".jpg"
+
+
+def fetch_remote_photo(url):
+    try:
+        request = Request(url, headers={"User-Agent": "Connections/1.0"})
+        with urlopen(request, timeout=10) as response:
+            content = response.read()
+            content_type = response.headers.get("Content-Type", "")
+    except Exception as e:
+        print(f'Error fetching photo from "{url}": {e}')
+        return ""
+
+    extension = guess_photo_extension(url, content_type)
+    name = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
+    file_path = photos_dir / f"{name}{extension}"
+
+    try:
+        with open(file_path, "wb") as file_handle:
+            file_handle.write(content)
+    except OSError as e:
+        print(f'Error saving photo "{file_path}": {e}')
+        return ""
+
+    return str(file_path)
+
+
+def normalize_photo_value(value):
+    value = (value or "").strip()
+    if not value:
+        return ""
+    if is_remote_url(value):
+        return fetch_remote_photo(value)
+    return value
+
+
+def normalize_entry_photo(entry_data):
+    if len(entry_data) < 9:
+        return entry_data
+    entry_list = list(entry_data)
+    entry_list[8] = normalize_photo_value(entry_list[8])
+    return tuple(entry_list)
+
+
+def parse_google_contacts_csv(file_path, mapping):
+    entries = []
+    skipped = 0
+
+    with open(file_path, newline="", encoding="utf-8-sig") as csv_file:
+        reader = csv.DictReader(csv_file)
+        for row in reader:
+            name_column = mapping.get("name", "")
+            name_column_2 = mapping.get("name_2", "")
+            phone_column = mapping.get("phone_contact", "")
+            email_column = mapping.get("email", "")
+            whatsapp_column = mapping.get("whatsapp_phone", "")
+            signal_column = mapping.get("signal_phone", "")
+            telegram_column = mapping.get("telegram_handle", "")
+            facebook_column = mapping.get("facebook", "")
+            linkedin_column = mapping.get("linkedin", "")
+            photo_column = mapping.get("photo", "")
+            relationship_column = mapping.get("relationship", "")
+            notes_column = mapping.get("other_notes", "")
+
+            name_primary = row.get(name_column, "").strip() if name_column else ""
+            name_secondary = row.get(name_column_2, "").strip() if name_column_2 else ""
+            name = " ".join(part for part in [name_primary, name_secondary] if part)
+            phone = row.get(phone_column, "").strip() if phone_column else ""
+            email = row.get(email_column, "").strip() if email_column else ""
+            whatsapp = row.get(whatsapp_column, "").strip() if whatsapp_column else ""
+            signal = row.get(signal_column, "").strip() if signal_column else ""
+            telegram = row.get(telegram_column, "").strip() if telegram_column else ""
+            facebook = row.get(facebook_column, "").strip() if facebook_column else ""
+            linkedin = row.get(linkedin_column, "").strip() if linkedin_column else ""
+            photo_raw = row.get(photo_column, "").strip() if photo_column else ""
+            photo = normalize_photo_value(photo_raw)
+            relationship = row.get(relationship_column, "").strip() if relationship_column else ""
+            notes = row.get(notes_column, "").strip() if notes_column else ""
+
+            if not name:
+                skipped += 1
+                continue
+
+            entry_data = (
+                name,
+                phone,
+                email,
+                whatsapp,
+                signal,
+                telegram,
+                facebook,
+                linkedin,
+                photo,
+                relationship,
+                notes,
+            )
+            entries.append(entry_data)
+
+    return entries, skipped
+
+
+def import_google_contacts(conn, table_name, file_path, mapping):
+    if not is_valid_table_name(table_name):
+        return None, None, "Invalid table name."
+    if not ensure_table_schema(conn, table_name):
+        return None, None, "Could not update table schema."
+
+    try:
+        entries, skipped = parse_google_contacts_csv(file_path, mapping)
+    except OSError as e:
+        return None, None, f"Could not read CSV: {e}"
+    except csv.Error as e:
+        return None, None, f"Invalid CSV format: {e}"
+
+    if not entries:
+        return 0, skipped, None
+
+    insert_sql = f'''
+    INSERT INTO {table_name} (name, phone_contact, email, whatsapp_phone, signal_phone, telegram_handle, facebook, linkedin, photo, relationship, other_notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    '''
+    try:
+        with conn:
+            conn.executemany(insert_sql, entries)
+        return len(entries), skipped, None
+    except sqlite3.Error as e:
+        return None, None, f"Error importing contacts: {e}"
+
 # Fetch entries from a specific table
 def fetch_entries(conn, table_name):
     if not is_valid_table_name(table_name):
         print('Invalid table name.')
         return []
+    ensure_table_schema(conn, table_name)
     try:
         cursor = conn.execute(f'SELECT * FROM {table_name}')
         entries = cursor.fetchall()
@@ -139,10 +332,14 @@ def edit_entry(conn, table_name, entry_id, entry_data):
     if not is_valid_table_name(table_name):
         print('Invalid table name.')
         return False
+    if not ensure_table_schema(conn, table_name):
+        return False
+
+    entry_data = normalize_entry_photo(entry_data)
 
     update_sql = f'''
     UPDATE {table_name}
-    SET name = ?, phone_contact = ?, email = ?, whatsapp_phone = ?, signal_phone = ?, telegram_handle = ?, facebook = ?, linkedin = ?, relationship = ?, other_notes = ?, last_modified = CURRENT_TIMESTAMP
+    SET name = ?, phone_contact = ?, email = ?, whatsapp_phone = ?, signal_phone = ?, telegram_handle = ?, facebook = ?, linkedin = ?, photo = ?, relationship = ?, other_notes = ?, last_modified = CURRENT_TIMESTAMP
     WHERE id = ?
     '''
     try:
@@ -197,6 +394,10 @@ def combine_tables(conn, table_names):
         print('Invalid table names selected.')
         return []
     
+    for table_name in valid_tables:
+        if not ensure_table_schema(conn, table_name):
+            return []
+
     # Create a query for each table that includes the source table name
     queries = [f"SELECT *, '{name}' AS source_table FROM {name}" for name in valid_tables]
     combined_query = ' UNION ALL '.join(queries)
@@ -226,6 +427,8 @@ def search_tables(conn, search_term, table_names, search_type='name'):
     combined_results = []
 
     for table_name in valid_tables:
+        if not ensure_table_schema(conn, table_name):
+            return []
         if search_type == 'name':
             query = f"SELECT *, '{table_name}' AS source_table FROM {table_name} WHERE name LIKE ?"
         elif search_type == 'relationship':

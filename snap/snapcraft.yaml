@@ -5,7 +5,7 @@ description: |
   Connections is a PyQt5-based application for managing and organizing contact information
   across multiple tables. Features include creating tables, adding/editing entries, combining
   tables, and searching across multiple tables.
-
+icon: global-network.ico
 grade: stable
 confinement: classic
 base: core22

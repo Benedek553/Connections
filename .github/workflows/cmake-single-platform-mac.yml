@@ -33,7 +33,7 @@ jobs:
 
       - name: Build executable with PyInstaller
         run: |
-          pyinstaller --onefile --noconsole --icon=global-network.ico frontend.py --name Connections --add-data=global-network.ico:. 
+          pyinstaller --onefile --noconsole --icon=global-network.icns frontend.py --name Connections --add-data=global-network.icns:. 
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

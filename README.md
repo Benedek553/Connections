@@ -168,7 +168,7 @@ pip install PyQt5
 ## Running
 
 ```bash
-python main.py
+python frontend.py
 ```
 
 ---

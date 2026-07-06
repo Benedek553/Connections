@@ -125,10 +125,10 @@ Each contact stores:
 ```
 project/
 │
-├── main.py
+├── frontend.py
 ├── backend.py
 ├── global-network.ico
-└── table.db
+└── global-network.icns
 ```
 
 The application stores its data inside the user's application data directory.
